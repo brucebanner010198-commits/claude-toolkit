@@ -1,0 +1,13 @@
+{
+  "name": "sj-toolkit",
+  "owner": { "name": "brucebanner010198-commits" },
+  "metadata": { "description": "Personal Claude Code skills, agents and workflow plugins." },
+  "plugins": [
+    {
+      "name": "dev-workflow",
+      "source": "./plugins/dev-workflow",
+      "description": "Recorded run review and model routing, with the worker agents the router uses.",
+      "version": "0.1.0"
+    }
+  ]
+}
