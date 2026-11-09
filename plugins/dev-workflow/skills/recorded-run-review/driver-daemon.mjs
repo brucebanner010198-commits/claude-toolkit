@@ -4,13 +4,17 @@
 // produce one continuous video plus a screenshot and text dump per step.
 //
 // Usage: PW=<path to node_modules/playwright> node driver-daemon.mjs <out_dir> [port]
-// Commands: curl -s localhost:<port>/cmd -d '{"op":"goto","url":"http://127.0.0.1:8000"}'
+// Commands (POST, JSON, with the token printed at startup and saved to <out_dir>/.driver-token):
+//   curl -s -X POST -H 'Content-Type: application/json' -H "X-Driver-Token: $TOKEN" \\
+//     127.0.0.1:<port>/cmd -d '{"op":"goto","url":"http://127.0.0.1:8000"}'
+// upload paths must sit under UPLOAD_DIR (env, default <out_dir>/uploads); download dirs under <out_dir>/downloads.
 //   ops: goto{url} click{sel} fill{sel,value} select{sel,value} check{sel} press{sel,key}
 //        upload{sel,path} download{sel,dir} wait{sel,state,timeout} sleep{ms}
 //        shot{name} text{sel?} eval{js} url{} close{}
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const { chromium } = await import(path.join(process.env.PW, 'index.mjs'));
 const out = process.argv[2];
@@ -22,6 +26,12 @@ if (!process.env.FRESH_DATA_DIR) throw new Error('Set FRESH_DATA_DIR to the isol
 if (fs.existsSync(process.env.FRESH_DATA_DIR) && fs.readdirSync(process.env.FRESH_DATA_DIR).length)
   throw new Error(`Not a fresh run: ${process.env.FRESH_DATA_DIR} is not empty. Start a new stack on a new folder.`);
 fs.mkdirSync(out, { recursive: true });
+const OUT = path.resolve(out);
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(OUT, 'uploads'));
+const DOWNLOAD_DIR = path.join(OUT, 'downloads');
+const TOKEN = crypto.randomBytes(24).toString('hex');
+fs.writeFileSync(path.join(OUT, '.driver-token'), TOKEN, { mode: 0o600 });
+const inside = (base, p) => { const r = path.resolve(base, p); return r === base || r.startsWith(base + path.sep) ? r : null; };
 const notes = [];
 const note = (m) => { notes.push(`${new Date().toISOString()} ${m}`); fs.writeFileSync(`${out}/NOTES.txt`, notes.join('\n')); };
 let n = 0, step = 'start';
@@ -42,6 +52,7 @@ page.on('dialog', d => { note(`[${step}] dialog ${d.type()}: ${d.message()}`); d
 
 const BAD = [/\bundefined\b/, /\bNaN\b/, /\[object/, /Traceback/, /Internal server error/i, /Field required/];
 async function shot(name) {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(name))) throw new Error('shot name must match [A-Za-z0-9_-]{1,64}');
   step = name; n += 1;
   await page.waitForTimeout(800);
   const file = `${String(n).padStart(3, '0')}_${name}`;
@@ -62,10 +73,17 @@ async function run(c) {
     case 'select': return { selected: await page.selectOption(c.sel, c.value, { timeout: t }) };
     case 'check': await page.check(c.sel, { timeout: t }); return {};
     case 'press': await page.press(c.sel, c.key, { timeout: t }); return {};
-    case 'upload': await page.setInputFiles(c.sel, c.path, { timeout: t }); return {};
+    case 'upload': {
+      const files = [].concat(c.path).map(f => inside(UPLOAD_DIR, f));
+      if (files.some(f => !f)) throw new Error(`upload path must be inside ${UPLOAD_DIR}`);
+      await page.setInputFiles(c.sel, files, { timeout: t }); return {};
+    }
     case 'download': {
       const [dl] = await Promise.all([page.waitForEvent('download', { timeout: t }), page.click(c.sel)]);
-      const target = path.join(c.dir, dl.suggestedFilename());
+      const dir = inside(DOWNLOAD_DIR, c.dir || '.');
+      if (!dir) throw new Error(`download dir must be inside ${DOWNLOAD_DIR}`);
+      fs.mkdirSync(dir, { recursive: true });
+      const target = path.join(dir, path.basename(dl.suggestedFilename()));
       await dl.saveAs(target);
       return { saved: target, size: fs.statSync(target).size };
     }
@@ -85,7 +103,17 @@ async function run(c) {
   }
 }
 
+const PORT_HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 http.createServer((req, res) => {
+  const deny = (code, msg) => { res.statusCode = code; res.end(JSON.stringify({ ok: false, error: msg })); };
+  // Block browser-originated requests (CSRF, DNS rebinding) and unauthenticated callers.
+  if (req.headers.origin) return deny(403, 'browser requests are not allowed');
+  if (!PORT_HOSTS.has(req.headers.host)) return deny(403, 'bad Host header');
+  if (req.method !== 'POST') return deny(405, 'POST only');
+  if (!String(req.headers['content-type'] || '').startsWith('application/json')) return deny(415, 'Content-Type must be application/json');
+  const given = Buffer.from(String(req.headers['x-driver-token'] || ''));
+  const want = Buffer.from(TOKEN);
+  if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return deny(401, 'bad or missing X-Driver-Token');
   let body = '';
   req.on('data', d => { body += d; });
   req.on('end', async () => {
@@ -101,4 +129,4 @@ http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(reply));
   });
-}).listen(port, '127.0.0.1', () => console.log(`driver ready on ${port}, out ${out}`));
+}).listen(port, '127.0.0.1', () => console.log(`driver ready on ${port}, out ${out}\nX-Driver-Token: ${TOKEN}`));

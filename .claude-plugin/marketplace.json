@@ -7,7 +7,7 @@
       "name": "dev-workflow",
       "source": "./plugins/dev-workflow",
       "description": "Recorded run review and model routing, with the worker agents the router uses.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
