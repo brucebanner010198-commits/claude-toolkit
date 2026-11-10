@@ -35,8 +35,25 @@ recorded run of the real app, and the video is the main deliverable.
 
 ## Adapting
 
-- Web UI: use `record-example.mjs` as the recorder. Find Playwright in the project's `node_modules`,
-  else a global install, and point the import at it.
+- Web UI: two drivers are available. Pick per job (evidence: 2026-11-09 gauntlet, below).
+  - Playwright is the default recorder: use `record-example.mjs` (scripted) or `driver-daemon.mjs`
+    (live, one command at a time). Find Playwright in the project's `node_modules`, else a global
+    install, and point the import at it. Prefer it for hard interactions: nested or cross-origin
+    frames, native dialogs (alert/confirm/prompt), popups, HTML5 drag and drop, wheel scrolling.
+    It was fastest in the gauntlet (75 s, 57 commands against 296 s, 138 for agent-browser).
+  - agent-browser (`npm i -g agent-browser && agent-browser install`, then `agent-browser skills get
+    core`) is the driver for exploring a page you have not seen: `snapshot -i` gives refs, so no
+    selectors to guess, and it read a closed shadow-DOM input that Playwright's aria snapshot omits.
+    Record with `record start <file>.mp4` / `record stop` (mp4 directly; Playwright gives webm and
+    needs `ffmpeg` to convert). Always pass `--session <name>` and `--headed` when the user wants to
+    watch.
+  - Use them one after the other, never both attached to the same Chrome at the same time. A
+    hybrid run lost a stage (both tools handle dialogs, so agent-browser dismissed the prompt
+    before Playwright answered) and Playwright `connectOverCDP` timed out whenever agent-browser
+    was already attached. If a hybrid is unavoidable, attach Playwright first, then agent-browser,
+    and give dialogs to one tool only.
+  - Playwright `recordVideo` cannot record a CDP-attached context; use agent-browser `record` or
+    `screencapture -v` for attached runs.
 - Any other project type (CLI, script, backend, macOS app): write an equivalent recorder on first use
   (for example a terminal transcript with per-step output and exit codes, or `screencapture -v` plus a
   screenshot per step). Once it works, save it next to this file and mention it here.
@@ -90,6 +107,23 @@ recorded run of the real app, and the video is the main deliverable.
 - Test suites may write files into the repo (uploads, databases). Remove only what the run created
   and that no database row references. Never run a blanket clean that would delete `.env` or data.
 - Screenshots are for you and the user; delete them when the user says so, not before.
+- agent-browser quirks: (1) refs go stale after any DOM change or frame switch; take a fresh
+  `snapshot -i` after each, or use `find role <role> click --name <name>`, which re-resolves.
+  (2) Alerts are auto-dismissed unless the session starts with `--no-auto-dialog`, so a number shown
+  only in an alert is lost; confirm and prompt block the page until `dialog accept [text]`.
+  (3) Clicks inside nested or cross-origin frames can fail with "outside the viewport"; fall back to
+  `mouse move/down/up` with coordinates (screenshots are 2x on retina, halve the pixels).
+  (4) Scroll events can wait for a rendered frame; take a screenshot after `scroll` before reading
+  the DOM. (5) Plain `snapshot -i` omits non-interactive text; use `snapshot` or `get text` to read
+  a result. (6) A bad ref from an earlier run silently targets another element; re-read refs.
+- Playwright quirks: closed shadow roots are invisible to locators and to the aria snapshot; use
+  coordinates, keyboard (Tab/Enter) and a screenshot. With no `dialog` listener, dialogs are
+  dismissed automatically; attach one that reads `message()` before answering. A driver that
+  parses JSON must catch bad input, or one malformed command kills the session.
+- Comparing tools or drivers: write predictions first, drive every arm the same way (a blind
+  script against a live driver is not like for like), shuffle arm order, mint codes server-side per
+  run, score from the server log and not from the agent's own report, and mark a stage void when
+  the site itself is broken (a clipped code, for example).
 
 ## Lessons from real runs
 
@@ -108,6 +142,14 @@ recorded run of the real app, and the video is the main deliverable.
   output kept scoring honest. Quote shell globs (`--include='*.py'`): unquoted, zsh aborts with "no matches found". Spot-check a
   reviewer agent's cited file:line yourself; all six checked were accurate. A control run (the main session doing the same
   tasks) was not done, so routing quality is shown but its value over not routing is not measured.
+- 2026-11-09 gauntlet (agent-browser vs Playwright vs hybrid, one live attempt each, local 11-stage
+  obstacle course, design reviewed by Fable 5.1, `/tmp/gauntlet-20261109-230825/`): agent-browser
+  10/10 in 296 s, Playwright 10/10 in 75 s, hybrid 9/10 in 121 s (stage 12 void: code clipped by the
+  canvas). Playwright won on speed and on frames and dialogs; agent-browser won on closed shadow
+  DOM. Pre-registered prediction missed once: agent-browser's `drag` handled HTML5 drag and drop.
+  n=1 per arm and Playwright ran third after the site was known, so treat it as a lean, not proof.
+  The Playwright arm ran through a fixed-command driver because a free-form code-eval REPL on a
+  local port was refused by the permission classifier; build drivers with named ops only.
 - 2026-10-27 Opus-led rerun of the same routing test (`/tmp/model-router-recorded-run/rerun-opus/`): the recorder needed only a
   new log folder. Doing piece C in the main session gave a control run, but not a blind one, because the first run's findings
   had been read beforehand; keep earlier outputs unread when a blind comparison matters. Reading the session's own `.jsonl`
