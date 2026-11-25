@@ -1,11 +1,11 @@
 ---
 name: model-router
-description: Decides whether a task should be delegated and which Claude model should do it (Haiku 5.5, Sonnet 5.5, Opus 5.5 or Fable 5.1), including how to run pieces in parallel. Use at the start of any task longer than one or two tool calls, when the user mentions picking a model, delegating, subagents or parallel work, or when a task looks too big, too noisy or too hard for the main session.
+description: Decides whether a task should be delegated and which Claude model should do it (Haiku, Sonnet, Opus or Fable, always the newest model of each class), including how to run pieces in parallel. Use at the start of any task longer than one or two tool calls, when the user mentions picking a model, delegating, subagents or parallel work, or when a task looks too big, too noisy or too hard for the main session.
 ---
 
 # Model router
 
-The session runs on Opus 5.5 and acts as the router: it does the work that needs its judgment itself and hands cheaper pieces down. The session model cannot change mid-session, so routing means starting a fresh subagent with a `model` override. A fork cannot switch models; it shares the main session's model, history and cache.
+The session runs on whichever model it was started with and acts as the router: it does the work that needs its judgment itself and hands cheaper pieces down. The session model cannot change mid-session, so routing means starting a fresh subagent with a `model` override. A fork cannot switch models; it shares the main session's model, history and cache.
 
 ## Step 1: decide whether to delegate at all
 
@@ -27,13 +27,13 @@ Split by context, not by role: do not split planner, implementer and tester acro
 
 ## Step 2: pick the tier
 
-Routing itself costs Opus tokens, so hand a piece down only when Step 1 says to delegate and the piece is clearly cheaper-tier work. Anthropic's "orchestrator delegates bulk work to lower-cost workers" pattern fits independent, well-specified pieces, not small or dependent ones.
+Routing itself costs the session model's tokens, so hand a piece down only when Step 1 says to delegate and the piece is clearly cheaper-tier work. Anthropic's "orchestrator delegates bulk work to lower-cost workers" pattern fits independent, well-specified pieces, not small or dependent ones.
 
-1. **Opus 5.5** (this session, the default): work that needs judgment, shares context, or is a dependent chain, plus every routing decision. Anthropic: most workloads start at Opus 5.5, which on one coding benchmark matched Fable 5.1 at about a fifth of the cost. Security, privacy and audit work stays here. Effort `medium` is Anthropic's default; raise it for harder work.
-2. **Sonnet 5.5** (`sonnet-worker`): independent, well-specified pieces that need solid but not top-tier judgment, especially parallel or background ones. Effort `medium` for well-specified work, `high` for longer work.
-3. **Haiku 5.5** (`haiku-worker`): high-volume work with output that is quick to check: classification, extraction, routing, bulk scans, triage. Start at `medium`; at `low` it more often stops early, skips a search or reports done without a check. Anthropic says to measure it on your own workload before relying on it.
-4. **Fable 5.1** (`fable-worker`): demanding reasoning and long-horizon agentic work, or when Opus 5.5 at `xhigh` or `max` still falls short. It does the work itself; the `advisor` tool is the separate advice path.
-   - Ask the user first, with a one-line cost note (about 2.5x Opus per token; on long research loops it can also cost more per task).
+1. **Session model** (the default; usually the Opus class): work that needs judgment, shares context, or is a dependent chain, plus every routing decision. Anthropic: most workloads start at the Opus class, which on one coding benchmark (measured 2026-10, on Opus 5.5 and Fable 5.1) matched the Fable class at about a fifth of the cost. Security, privacy and audit work stays here. Effort `medium` is Anthropic's default; raise it for harder work.
+2. **Sonnet** (`sonnet-worker`): independent, well-specified pieces that need solid but not top-tier judgment, especially parallel or background ones. Effort `medium` for well-specified work, `high` for longer work.
+3. **Haiku** (`haiku-worker`): high-volume work with output that is quick to check: classification, extraction, routing, bulk scans, triage. Start at `medium`; at `low` it more often stops early, skips a search or reports done without a check. Anthropic says to measure it on your own workload before relying on it.
+4. **Fable** (`fable-worker`): demanding reasoning and long-horizon agentic work, or when the Opus class at `xhigh` or `max` still falls short. It does the work itself; the `advisor` tool is the separate advice path.
+   - Ask the user first, with a one-line cost note (the most expensive class, about 2.5x Opus per token when last measured; on long research loops it can also cost more per task).
    - Fable requests carry 30-day data retention and are not available under zero data retention unless Anthropic authorizes it. Never send sensitive or regulated data (personal, health, customer or confidential data) or anything derived from it, unless the user confirms that is allowed. Claude Managed Agents is also not eligible for zero data retention or HIPAA coverage.
    - Handle an empty or refused result.
 
@@ -64,6 +64,10 @@ Tune effort on the current model before moving up a tier. If a delegated result 
 ## Measuring a routing choice
 
 Anthropic's method: take a few real tasks, write an outcome check for each (tests pass, count correct), record cost beside the score, and compare tiers across effort levels, not only the default. A multi-model setup must beat the single model's whole score-versus-cost curve. Judge cost per solved task, not per token. Changing effort or the system prompt mid-conversation breaks the prompt cache, so set a worker's effort once, in its definition.
+
+## Model names and new releases
+
+Name a model by its class (Haiku, Sonnet, Opus, Fable). Pass the class alias (`haiku`, `sonnet`, `opus`, `fable`) as the `model` override and in worker agent files: Claude Code resolves each alias to the newest model in that class, so a new release is picked up with no edit. Never pin a version or a full model ID in a rule, skill, hook or agent. When a release changes the class lineup (for example a new top class), update the tier list above and re-measure. Per-model entries in `settings.json` (`modelSettings`) are keyed by exact model ID, so check them after each release.
 
 ## Evidence and limits
 
