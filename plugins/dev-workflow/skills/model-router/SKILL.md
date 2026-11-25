@@ -27,7 +27,7 @@ Split by context, not by role: do not split planner, implementer and tester acro
 
 ## Step 2: pick the tier
 
-Routing itself costs Opus tokens, so hand a piece down only when Step 1 says to delegate and the piece is clearly cheaper-tier work. Anthropic's "orchestrator delegates bulk work to lower-cost workers" pattern fits independent, well-specified pieces, not small or dependent ones.
+Routing itself costs the session model's tokens, so hand a piece down only when Step 1 says to delegate and the piece is clearly cheaper-tier work. Anthropic's "orchestrator delegates bulk work to lower-cost workers" pattern fits independent, well-specified pieces, not small or dependent ones.
 
 1. **Session model** (the default; usually the Opus class): work that needs judgment, shares context, or is a dependent chain, plus every routing decision. Anthropic: most workloads start at the Opus class, which on one coding benchmark (measured 2026-10, on Opus 5.5 and Fable 5.1) matched the Fable class at about a fifth of the cost. Security, privacy and audit work stays here. Effort `medium` is Anthropic's default; raise it for harder work.
 2. **Sonnet** (`sonnet-worker`): independent, well-specified pieces that need solid but not top-tier judgment, especially parallel or background ones. Effort `medium` for well-specified work, `high` for longer work.

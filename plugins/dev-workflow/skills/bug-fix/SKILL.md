@@ -1,6 +1,6 @@
 ---
 name: bug-fix
-description: Use when the user reports a bug to fix in a project - a defect, regression, crash, wrong output, error message, or a failing or flaky test ("fix this bug", "this is broken", "why does X fail", "it worked yesterday"). Runs a diagnose-first workflow modeled on JetBrains Junie - confirm the bug, find the cause with a debugger before editing any source, write a four-part plan, fix at the cause, prove it, and report per file with a way to revert. Not for new features, refactors, code review or production incident response.
+description: Use when the user reports a bug to fix in a project - a defect, regression, crash, wrong output, error message, or a failing or flaky test ("fix this bug", "this is broken", "why does X fail", "it worked yesterday"). Runs a diagnose-first workflow modeled on JetBrains Junie - confirm the bug, find the cause before editing any source (with a debugger when reading is not enough), plan the fix when it is multi-file or hard, fix at the cause, prove it, and report per file with a way to revert. Not for new features, refactors, code review or production incident response.
 ---
 
 # Bug fix
@@ -52,26 +52,47 @@ configurations instead of guessed commands. Do the same:
 
 Junie's Debug mode drives a real debugger and does not edit source while it investigates. It
 sets line and exception breakpoints, steps, reads variables and call stacks on every thread,
-and evaluates expressions in the paused frame. Use the terminal equivalent for the language:
+and evaluates expressions in the paused frame.
 
-The Bash tool has no interactive terminal, so drive the debugger with a command list, never
-as a live prompt:
+The terminal equivalent is the language's own debugger. The Bash tool has no interactive
+terminal, so drive it with a command list, never as a live prompt. Forms that were run and
+worked (2026-11-25):
 
-| Language | Non-interactive form | Checked |
-|---|---|---|
-| Python | `python3 -m pdb -c 'b file.py:LINE' -c c -c 'p name' -c bt -c q script.py` | ran 2026-11-25 |
-| Python | `printf 'b file.py:LINE\nc\np name\nq\n' \| python3 -m pdb script.py` | ran 2026-11-25 |
-| C, C++, Swift, Rust | `lldb --batch -o 'breakpoint set --file f.c --line N' -o run -o 'frame variable' -o bt ./binary` | ran 2026-11-25 (C) |
-| JavaScript, TypeScript | `node inspect` did not take commands from a pipe; no working form found yet | failed 2026-11-25 |
-| Go, Java, Kotlin | `dlv`, `jdb` | not tried |
+Python, stop at a line and read values:
+
+```
+python3 -m pdb -c 'b file.py:LINE' -c c -c 'p name' -c bt -c q script.py
+```
+
+Python, the same with commands on standard input:
+
+```
+printf 'b file.py:LINE\nc\np name\nq\n' | python3 -m pdb script.py
+```
+
+Python, a crash: continue to the uncaught exception, then read the failing frame (post-mortem):
+
+```
+python3 -m pdb -c c -c 'p name' -c bt -c q script.py
+```
+
+C (the same form should serve C++, Swift and Rust, which were not run):
+
+```
+lldb --batch -o 'breakpoint set --file f.c --line N' -o run -o 'frame variable' -o bt ./binary
+```
+
+Not working or not tried: `node inspect` did not take commands from a pipe (2026-11-25), and
+`dlv` (Go) and `jdb` (Java, Kotlin) were not tried.
 
 Where no checked form exists, a one-off read-only probe is the fallback: a short script, kept
 outside the project, that imports the code and prints the values in question. When a new form is
-proven on a real bug, add it to this table with the date.
+proven on a real bug, add it to the list above with the date.
 
 - Start from the failing command in phase 1. Break where the wrong value first appears, then
   walk back up the stack until the value is right. The cause is at that boundary.
-- An exception breakpoint ("break on raise") is the fastest start for a crash.
+- For a crash, start at the exception: the post-mortem form above for Python, or a breakpoint
+  on the raise in other debuggers.
 - Pick one of Junie's three patterns: run it all yourself; set the breakpoints and let the user
   trigger the flow; or attach to a session the user already has open.
 - If a JetBrains IDE is open on the project and its MCP server with the debugger toolset is
@@ -82,14 +103,14 @@ proven on a real bug, add it to this table with the date.
 - Read with the tools that match an IDE's semantic search: a language server or
   "find references" where one is set up, otherwise grep for every caller and every writer of
   the wrong value.
-
 - [Owner] When reading the source already proves the cause (you can trace the phase 1 input to
-  the exact wrong output by hand), skip the debugger and state in the final report that the cause was read from the source, not
-  observed in a debugger. Use the
-  debugger as soon as the trace depends on a runtime value you would otherwise have to guess.
+  the exact wrong output by hand), skip the debugger and state in the final report that the
+  cause was read from the source, not observed in a debugger. Use the debugger as soon as the
+  trace depends on a runtime value you would otherwise have to guess.
 
-Diagnosis is done when you can state the cause as one sentence with a `file:line`, and explain
-why the phase 1 command produces exactly the wrong output seen.
+Diagnosis is done when you can state the cause as one sentence with a `file:line`, explain why
+the phase 1 command produces exactly the wrong output seen, and list every caller that shares
+the fault.
 
 ### 3. Plan [Junie]
 
@@ -115,18 +136,19 @@ four parts:
 
 ### 4. Fix [Owner]
 
-- Add the test first and watch it fail for the reason named in the plan. A test that fails for
-  another reason is testing something else.
+- Add the test first and watch it fail for the reason found in the diagnosis. A test that fails
+  for another reason is testing something else.
 - Change the code at the cause. Keep the change as small as the cause allows, and leave
   unrelated code, formatting and names alone.
-- Fix every caller the plan listed. A fix in one call site with the same fault left in two
+- Fix every caller the diagnosis listed. A fix in one call site with the same fault left in two
   others is not done.
 
 ### 5. Verify [Junie + Owner]
 
 - Rerun the phase 1 reproduction. It must now give the expected output.
 - The new test passes on the new code. If it was written after the fix, prove it fails on the
-  old code too (`git stash` the fix, run, restore).
+  old code too. Stash only the fixed source files, so the test stays in place:
+  `git stash push -- <fixed files>`, run the test, then `git stash pop`.
 - [Owner] Run only the tests that cover the changed code, plus any that failed. Do not rerun a
   suite that already passed and covers nothing that changed; name what was skipped.
 - [Owner] Run the project's linter and type checker on the changed files only. JetBrains lists
@@ -174,7 +196,8 @@ Junie can onboard itself to a project and write what it learned into a guideline
 same for bugs. After the first bug fixed in a project that has no "Bug fixing" section, offer
 to add one to the instruction file the project already has (`CLAUDE.md`, else `AGENTS.md`).
 Use `project-notes-template.md` in this folder, filled only with commands that were actually
-run in this session and worked. Never create a second instruction file just for this.
+run in this session and worked. Never create a second instruction file just for this. If the
+project has neither file, the offer is to create `CLAUDE.md` holding only this section.
 
 ## Lessons from real runs
 
@@ -195,3 +218,7 @@ change.
   one-off script before any edit, found the cause, wrote the failing test, fixed and reported.
   It chose the probe over pdb. The pdb and lldb command lists in phase 2 were run by hand and
   work, but no trial session has yet chosen a debugger on its own.
+- 2026-11-25 review before merge: a plain `git stash` in phase 5 would have stashed the new test
+  with the fix; it now stashes only the fixed files (run by hand, works). The debugger forms
+  moved out of a table because the escaped pipe there would break a copied command. The pdb
+  post-mortem form for crashes was added after running it by hand.
