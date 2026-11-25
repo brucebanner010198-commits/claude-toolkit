@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "0.1.3",
-  "description": "Recorded run review and model routing, with the worker agents the router uses.",
+  "version": "0.1.4",
+  "description": "Recorded run review, model routing and a diagnose-first bug-fix workflow, with the worker agents the router uses.",
   "author": { "name": "brucebanner010198-commits" }
 }

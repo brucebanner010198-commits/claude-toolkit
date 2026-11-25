@@ -11,3 +11,6 @@
 
 ## dev-workflow 0.1.3
 - model-router: route by class (Haiku, Sonnet, Opus, Fable) and class alias, never a pinned version, so each new release is picked up automatically. The session model is no longer assumed to be Opus.
+
+## dev-workflow 0.1.4
+- bug-fix: new skill. Diagnose-first bug workflow modeled on JetBrains Junie (read-only debugger diagnosis, four-part plan, known run commands, per-file report with revert), combined with the existing rules for root-cause tests, targeted reruns and recorded runs. Adds a project notes template.

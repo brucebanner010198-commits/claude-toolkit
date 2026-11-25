@@ -17,6 +17,7 @@ Update: `claude plugin marketplace update sj-toolkit`, then restart Claude Code.
 |---|---|---|---|
 | dev-workflow | recorded-run-review | model | Drives the real app as a user, records video and per-step screenshots, fixes what breaks, repeats until a clean run. Needs Node 18+ and Playwright (`PW` env var). |
 | dev-workflow | model-router | model | Decides whether to delegate a task and to which model (Haiku, Sonnet, Opus, Fable). Uses the four `*-worker` agents. |
+| dev-workflow | bug-fix | model | Diagnose-first bug workflow modeled on JetBrains Junie: confirm the bug, find the cause with a debugger before editing, write a four-part plan, fix at the cause, prove it, report per file. Reads a "Bug fixing" section in the project's CLAUDE.md or AGENTS.md. |
 
 Agents in `dev-workflow`: haiku-worker, sonnet-worker, opus-worker, fable-worker.
 
